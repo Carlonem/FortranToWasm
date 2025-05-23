@@ -25,7 +25,6 @@ project/
 ├── fortranToWasm.py        # Python build script
 ├── src/                    # Source code directory
 │   ├── main.f90            # Fortran main program
-│   ├── fixed_integer.f90   # Fortran module with functions
 │   ├── wrapper.c           # C wrapper functions
 │   ├── index.html          # Web interface (used to build)
 │   └── Makefile            # Build configuration
@@ -41,8 +40,7 @@ project/
 
 1. Clone this repository:
    ```
-   git clone https://github.com/Carlonem/FortranToWasm.git
-   cd FortranToWasm
+   git clone https://github.com/Carlonem/FortranToWasm.git && cd FortranToWasm
    ```
 
 2. Get the following Docker image (use **dev** for now):

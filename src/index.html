@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fortran To WASM With C Wrapper</title>
+    <meta charset="utf-8">
+    <style>
+        body { 
+            font-family: sans-serif; 
+            padding: 20px; 
+            max-width: 1000px; 
+            margin: auto; 
+            line-height: 1.6; 
+        }
+        #output { 
+            padding: 15px; 
+            margin: 20px 0; 
+            border: 1px solid #ccc; 
+            background-color: #f9f9f9; 
+            min-height: 50px; 
+            font-family: monospace; 
+            font-size: 1.1em; 
+            border-radius: 4px; 
+            word-wrap: break-word; 
+        }
+        #log, #compileLog { 
+            background-color: #e9e9e9; 
+            border: 1px solid #dcdcdc; 
+            padding: 10px; 
+            margin: 20px 0; 
+            max-height: 250px; 
+            overflow-y: auto; 
+            font-family: monospace; 
+            font-size: 0.9em; 
+            white-space: pre-wrap; 
+            border-radius: 4px; 
+            color: #555; 
+        }
+        .button-container {
+            display: flex;
+            flex-wrap: nowrap;
+            gap: 10px;
+            margin: 20px 0;
+            overflow-x: auto;
+            padding-bottom: 5px;
+        }
+        button { 
+            background-color: #007bff; 
+            color: white; 
+            padding: 8px 16px;
+            border: none; 
+            border-radius: 4px; 
+            cursor: pointer; 
+            font-size: 14px;
+            white-space: nowrap;
+            min-width: fit-content;
+            transition: all 0.2s ease;
+            flex-shrink: 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        button:disabled { 
+            background-color: #cccccc; 
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+        button:hover:not(:disabled) { 
+            background-color: #0056b3;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        }
+        button:active:not(:disabled) {
+            transform: translateY(0);
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        }
+        .status { font-style: italic; color: #666; }
+        .success { color: #28a745; font-weight: bold; }
+        .error { color: #dc3545; font-weight: bold; }
+        .info { color: #17a2b8; }
+        .warn { color: #ffc107; font-weight: bold;}
+    </style>
+</head>
+<body>
+    <h1>Fortran To WASM With C Wrapper</h1>
+    <p>Test using a Fortran function accessed through a C wrapper.</p>
+    <div class="button-container">
+        <input type="number" id="numberInput" placeholder="Enter a number" value="1" min="1" style="padding: 8px; border-radius: 4px; border: 1px solid #ccc;">
+        <button id="generateBtn" disabled>Get Fixed Integer</button>
+        <button id="startBtn" disabled>Run Main Program</button>
+        <button id="toggleLogBtn">Show/Hide Log</button>
+        <button id="toggleCompileLogBtn">Show/Hide Compilation Log</button>
+    </div>
+    <div id="output"><span class="status">Loading WebAssembly module...</span></div>
+    <div id="log" style="display:none;"></div>
+    <div id="compileLog" style="display:none;"></div>
+
+    <script>
+        /**
+         * WebAssembly Fortran Interface
+         * 
+         * This script loads and manages the interaction with WebAssembly module compiled from Fortran.
+         * It provides a UI for calling Fortran functions through C wrappers and displaying results.
+         * 
+         * Features:
+         * - Dynamic loading of WASM module
+         * - Error handling and detailed logging
+         * - Interface for calling Fortran functions via C wrappers
+         * - Execution of the main Fortran program
+         */
+        
+        // DOM element references
+        const logElement = document.getElementById('log');
+        const outputElement = document.getElementById('output');
+        const generateBtn = document.getElementById('generateBtn');
+        const startBtn = document.getElementById('startBtn');
+        const toggleLogBtn = document.getElementById('toggleLogBtn');
+        const toggleCompileLogBtn = document.getElementById('toggleCompileLogBtn');
+        const compileLogElement = document.getElementById('compileLog');
+        
+        // Module and function references
+        let fortranModule;
+        let getFixedInteger;
+        let startProgram;
+        
+        // Using the C wrapper function names
+        const wasmFunctionName = '_get_fixed_integer_wrapper';
+        const startFunctionName = '_start_wrapper';
+
+        /**
+         * Adds a timestamped message to the log display
+         * @param {string} message - Message to be logged
+         * @param {string} type - Message type (info, success, error, warn)
+         */
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            let cssClass = type;
+            const sanitizedMessage = String(message).replace(/</g, "<").replace(/>/g, ">");
+            entry.innerHTML = `[${timestamp}] <span class="${cssClass}">${sanitizedMessage}</span>`;
+            logElement.appendChild(entry);
+            logElement.scrollTop = logElement.scrollHeight;
+            console[type] ? console[type](`[WASM Log] ${message}`) : console.log(`[WASM Log - ${type}] ${message}`);
+        }
+
+        // Event handler to toggle the visibility of the runtime log
+        toggleLogBtn.addEventListener('click', () => {
+            const isHidden = logElement.style.display === 'none';
+            logElement.style.display = isHidden ? 'block' : 'none';
+            toggleLogBtn.textContent = isHidden ? 'Hide Log' : 'Show Log';
+        });
+
+        // Event handler to toggle the visibility of the compilation log
+        toggleCompileLogBtn.addEventListener('click', () => {
+            const isHidden = compileLogElement.style.display === 'none';
+            compileLogElement.style.display = isHidden ? 'block' : 'none';
+            toggleCompileLogBtn.textContent = isHidden ? 'Hide Compilation Log' : 'Show/Hide Compilation Log';
+        });
+
+        // Event handler for the "Get Fixed Integer" button
+        generateBtn.addEventListener('click', () => {
+            if (!getFixedInteger) {
+                log('Error: The getFixedInteger function is not ready.', 'error');
+                outputElement.innerHTML = `<span class="error">Error: WASM function not loaded.</span>`;
+                return;
+            }
+            try {
+                const inputNumber = parseInt(document.getElementById('numberInput').value) || 1;
+                log(`🔄 Calling C wrapper function '${wasmFunctionName}' via cwrap with number ${inputNumber}...`);
+                generateBtn.disabled = true;
+                outputElement.innerHTML = `<span class="status">Getting integer...</span>`;
+                setTimeout(() => {
+                    try {
+                        const fixedInt = getFixedInteger(inputNumber);
+                        log(`✅ Function returned: ${fixedInt}`, 'success');
+                        outputElement.innerHTML = `<span class="success">Fixed integer received: <b>${fixedInt}</b> (using input: ${inputNumber})</span>`;
+                    } catch (innerError) {
+                        const errorMessage = innerError.message || String(innerError);
+                        log(`❌ Error WITHIN WASM call: ${errorMessage}`, 'error');
+                        if (errorMessage.includes('Cannot call unknown function')) {
+                            log(`   -> Check if the name '${wasmFunctionName}' was included in EXPORTED_FUNCTIONS during compilation and if linking was successful.`, 'error');
+                        }
+                        const cleanError = errorMessage.split('\n')[0];
+                        outputElement.innerHTML = `<span class="error">Error in WASM execution: ${cleanError} (see log/console)</span>`;
+                        console.error("Detailed error in WASM call:", innerError);
+                    } finally {
+                        generateBtn.disabled = false;
+                    }
+                }, 50);
+            } catch (error) {
+                const errorMessage = error.message || String(error);
+                log(`❌ Error preparing WASM call: ${errorMessage}`, 'error');
+                const cleanError = errorMessage.split('\n')[0];
+                outputElement.innerHTML = `<span class="error">Error calling WASM: ${cleanError} (see log/console)</span>`;
+                generateBtn.disabled = false;
+                console.error("Detailed error preparing WASM call:", error);
+            }
+        });
+
+        /**
+         * Loads the WebAssembly module by dynamically adding the script tag
+         */
+        async function loadWasm() {
+            log("🔄 Starting WASM loading...");
+            log(`Attempting to load: ${document.location.origin}/fortran.js`);
+             if (typeof FortranModule === 'undefined') {
+                const scriptTag = document.createElement('script');
+                scriptTag.src = 'fortran.js';
+                scriptTag.async = true;
+                scriptTag.onload = async () => {
+                    log("✅ Script 'fortran.js' loaded.");
+                    if (typeof FortranModule === 'function') {
+                       await initializeModule();
+                    } else {
+                        log("❌ Error: 'FortranModule' is not a function after loading the script.", 'error');
+                        outputElement.innerHTML = `<span class="error">Failed to load: FortranModule not defined.</span>`;
+                    }
+                };
+                scriptTag.onerror = (event) => {
+                    log(`❌ Critical failure loading 'fortran.js'. Error: ${event.type}`, 'error');
+                    outputElement.innerHTML = `<span class="error">Failed to load fortran.js. Check console and network.</span>`;
+                     log(`   Attempted URL: ${new URL('fortran.js', window.location.href)}`, 'error');
+                };
+                document.body.appendChild(scriptTag);
+                log("⏳ Waiting for 'fortran.js' script to load...");
+            } else {
+                 log("ℹ️ 'FortranModule' already exists. Attempting to initialize...");
+                 await initializeModule();
+            }
+        }
+
+        /**
+         * Initializes the WebAssembly module once the script is loaded
+         */
+        async function initializeModule() {
+            try {
+                log("🔄 Instantiating and initializing the WASM module...");
+                const moduleConfig = {
+                    print: (text) => { log(`[WASM stdout] ${text}`, 'info'); },
+                    printErr: (text) => { log(`[WASM stderr] ${text}`, 'warn'); },
+                    onRuntimeInitialized: () => {
+                         log("✅ WASM runtime initialized (onRuntimeInitialized called).");
+                    },
+                    onAbort: (reason) => {
+                        log(`WASM aborted! Reason: ${reason}`, 'error');
+                        console.error("WASM Abort Reason:", reason);
+                        outputElement.innerHTML = `<span class="error">WASM Aborted: ${reason}. See console.</span>`;
+                        generateBtn.disabled = true;
+                    }
+                };
+                fortranModule = await FortranModule(moduleConfig);
+                log("✅ WASM module successfully instantiated.");
+
+                // List all exported properties for diagnostics
+                log("📋 Checking exported properties of WASM module:");
+                const moduleFunctions = [];
+                for (const prop in fortranModule) {
+                    if (typeof fortranModule[prop] === 'function' && !prop.startsWith('_')) {
+                        moduleFunctions.push(prop);
+                    }
+                }
+                log(`   Available functions: ${moduleFunctions.join(', ') || 'none'}`);
+
+                log(`🔄 Setting up functions with cwrap...`);
+                getFixedInteger = fortranModule.cwrap(
+                    wasmFunctionName.replace(/^_/, ''),
+                    'number',
+                    ['number']  // Now accepts a numeric parameter
+                );
+
+                startProgram = fortranModule.cwrap(
+                    startFunctionName.replace(/^_/, ''),
+                    null,
+                    []
+                );
+
+                if (typeof getFixedInteger !== 'function' || typeof startProgram !== 'function') {
+                     throw new Error(`cwrap failed to return a function. Check export and names.`);
+                }
+
+                log(`✅ Functions successfully configured via cwrap.`);
+                outputElement.innerHTML = "<span class='info'>WASM module ready. Click the buttons!</span>";
+                generateBtn.disabled = false;
+                startBtn.disabled = false;
+                log("🚀 System ready!", 'success');
+
+            } catch (error) {
+                const errorMessage = error.message || String(error);
+                log(`❌ Fatal error during WASM initialization: ${errorMessage}`, 'error');
+                outputElement.innerHTML = `<span class="error">Error initializing WASM: ${errorMessage}</span>`;
+                console.error("Detailed error in WASM initialization:", error);
+            }
+        }
+
+        // Event handler for the "Run Main Program" button
+        startBtn.addEventListener('click', () => {
+            if (!startProgram) {
+                log('Error: The startProgram function is not ready.', 'error');
+                outputElement.innerHTML = `<span class="error">Error: WASM function not loaded.</span>`;
+                return;
+            }
+            try {
+                log(`🔄 Calling Fortran main program...`);
+                startBtn.disabled = true;
+                outputElement.innerHTML = `<span class="status">Executing main program...</span>`;
+                setTimeout(() => {
+                    try {
+                        startProgram();
+                        log(`✅ Main program executed successfully`, 'success');
+                        outputElement.innerHTML = `<span class="success">Main program executed successfully!</span>`;
+                    } catch (innerError) {
+                        const errorMessage = innerError.message || String(innerError);
+                        log(`❌ Error in main program execution: ${errorMessage}`, 'error');
+                        outputElement.innerHTML = `<span class="error">Execution error: ${errorMessage} (see log/console)</span>`;
+                        console.error("Detailed error:", innerError);
+                    } finally {
+                        startBtn.disabled = false;
+                    }
+                }, 50);
+            } catch (error) {
+                const errorMessage = error.message || String(error);
+                log(`❌ Error calling main program: ${errorMessage}`, 'error');
+                outputElement.innerHTML = `<span class="error">Error: ${errorMessage} (see log/console)</span>`;
+                startBtn.disabled = false;
+                console.error("Detailed error:", error);
+            }
+        });
+
+        // Global error handlers
+        window.addEventListener('error', (event) => {
+            log(`❌ Global error: ${event.message}`, 'error');
+            console.error("Global error event:", event);
+        });
+        window.addEventListener('unhandledrejection', (event) => {
+             log(`❌ Unhandled Promise rejection: ${event.reason}`, 'error');
+             console.error("Unhandled Promise Rejection:", event.reason);
+        });
+
+        // Initialize when DOM is fully loaded
+        document.addEventListener('DOMContentLoaded', () => {
+            logElement.innerHTML = '';
+            loadWasm();
+            
+            // Load compilation log
+            fetch('compile.log')
+                .then(response => response.text())
+                .then(text => {
+                    compileLogElement.textContent = text;
+                })
+                .catch(error => {
+                    compileLogElement.textContent = `Error loading compilation log: ${error}`;
+                    console.error('Error loading compile.log:', error);
+                });
+        });
+    </script>
+</body>
+</html>

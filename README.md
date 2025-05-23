@@ -41,13 +41,13 @@ project/
 
 1. Clone this repository:
    ```
-   git clone <repository-url>
-   cd <repository-directory>
+   git clone https://github.com/Carlonem/FortranToWasm.git
+   cd FortranToWasm
    ```
 
-2. Get the following Docker image:
+2. Get the following Docker image (use **dev** for now):
    ```
-   docker pull ghcr.io/r-wasm/flang-wasm:main
+   docker pull ghcr.io/r-wasm/flang-wasm:dev
    ```
 
 3. Run the build script:

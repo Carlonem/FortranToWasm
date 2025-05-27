@@ -81,7 +81,7 @@ def run_docker(command, description):
         "-e", "EM_CACHE=/cache/emsdk",  # Define Emscripten environment variable
         "-w", "/src",
         "--user", f"{uid}:{gid}",
-        "ghcr.io/r-wasm/flang-wasm:dev",
+        "ghcr.io/r-wasm/flang-wasm:main",
         "bash", "-c", command
     ]
     

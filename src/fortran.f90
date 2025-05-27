@@ -2,7 +2,7 @@ module my_module
     use iso_c_binding
     implicit none
     integer(c_int), parameter :: a = 0, b = 9000000
-    integer(c_int) :: c = 122
+    integer(c_int) :: c = 123
 
 contains
     ! Iterative function that performs a basic calculation
